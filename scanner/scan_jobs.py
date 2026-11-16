@@ -108,6 +108,64 @@ def salary(p):
     return f"CHF {rng}" + (f" / {unit}" if unit else "")
 
 
+SOLIQUE_LIST = "https://live.solique.ch/{slug}/?page={page}"
+SOLIQUE_DETAIL = "https://live.solique.ch/{slug}/job/details/{jid}/"
+CREATIVE = re.compile(
+    r"media|medien|grafik|design|marketing|content|foto|photo|video|kommunikation|werb|polygraf|"
+    r"mediamat|web|social|kreativ|creative|brand|marke|redaktion|publish|layout", re.I)
+
+
+def scan_solique(slug, known, max_pages=15):
+    """Liest die Stellenliste eines solique.ch-Karriereportals und holt die Details
+    der Stellen, deren Titel nach Gestaltung, Medien oder Marketing klingt."""
+    found, out = {}, []
+    for page in range(1, max_pages + 1):
+        h = fetch(SOLIQUE_LIST.format(slug=slug, page=page))
+        items = re.findall(r'<a[^>]+href="[^"]*job/details/(\d+)[^"]*"[^>]*>(.*?)</a>', h, re.S)
+        new = 0
+        for jid, inner in items:
+            if jid in found:
+                continue
+            found[jid] = html.unescape(re.sub(r"\s+", " ", re.sub("<[^>]+>", " ", inner))).strip()
+            new += 1
+        if not new:
+            break
+        time.sleep(0.4)
+    for jid, label in found.items():
+        doc_id = f"solique-{slug}-{jid}"
+        if doc_id in known or not CREATIVE.search(label) or SKIP_TITLE.search(label):
+            continue
+        url = SOLIQUE_DETAIL.format(slug=slug, jid=jid)
+        page = fetch(url)
+        if not page:
+            continue
+        m = re.search(r"<title>(.*?)</title>", page, re.S)
+        title = html.unescape(m.group(1)).split("|")[0].strip() if m else label
+        company = html.unescape(m.group(1)).split("|")[-1].strip() if m and "|" in m.group(1) else slug
+        body = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", page, flags=re.S)
+        text = strip_html(body)
+        mail = re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", text)
+        tel = re.search(r"0\d{2} \d{3} \d{2} \d{2}", text)
+        out.append({
+            "doc_id": doc_id,
+            "matchedTerm": f"Karriereportal {slug}",
+            "title": title,
+            "company": company,
+            "location": label.split("%")[-1].strip() if "%" in label else "",
+            "workHours": "",
+            "employmentType": "",
+            "salary": "",
+            "datePosted": "",
+            "validThrough": "",
+            "industry": "",
+            "contact": " · ".join(x.group(0) for x in [tel, mail] if x),
+            "url": url,
+            "description": text[:4000],
+        })
+        time.sleep(0.6)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--terms", required=True, help="Kommagetrennte Suchbegriffe")
@@ -118,6 +176,8 @@ def main():
     ap.add_argument("--keep-apprenticeships", action="store_true")
     ap.add_argument("--locations", default="",
                     help='Kommagetrennte Orte; "sursee" = Region Sursee 25 km. Leer = ganze Schweiz')
+    ap.add_argument("--solique", default="ottosag",
+                    help="Kommagetrennte solique.ch-Firmenkürzel (Karriereportale), leer = keine")
     a = ap.parse_args()
     locs = REGION_SURSEE if a.locations.strip().lower() == "sursee" else a.locations
     locs = [l.strip() for l in locs.split(",") if l.strip()] or [None]
@@ -188,6 +248,10 @@ def main():
             "description": strip_html(p.get("description", ""))[:4000],
         })
         time.sleep(0.6)
+
+    # Karriereportale einzelner Firmen auf solique.ch (z. B. OTTO'S)
+    for slug in [s.strip() for s in a.solique.split(",") if s.strip()]:
+        out.extend(scan_solique(slug, known))
 
     js = json.dumps(out, ensure_ascii=False, indent=1)
     if a.out == "-":

@@ -7,7 +7,7 @@ Kurzbeschrieb) und das Schreiben ins Dashboard macht der geplante Claude-Suchlau
 
 Aufruf:
   python3 scan_jobs.py --known known_ids.txt --out candidates.json \
-      --terms "mediamatiker,grafiker,polygraf" [--max-age 21] [--pages 2]
+      --terms "mediamatiker,grafiker,polygraf" [--locations sursee] [--max-age 21] [--pages 2]
 """
 import argparse
 import html
@@ -21,6 +21,15 @@ from datetime import datetime, timedelta, timezone
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) Stellenradar/1.0"
 SEARCH = "https://www.jobs.ch/de/stellenangebote/?term={term}&page={page}"
+SEARCH_LOC = "https://www.jobs.ch/de/stellenangebote/?location={loc}&term={term}&page={page}"
+# Orte im Umkreis von ca. 25 km um Sursee (jobs.ch filtert per Ortsname exakt,
+# der Radius-Parameter wird bei automatischen Abfragen ignoriert).
+REGION_SURSEE = (
+    "Sursee,Schenkon,Oberkirch,Nottwil,Sempach,Neuenkirch,Rothenburg,Emmen,Emmenbrücke,"
+    "Luzern,Kriens,Ebikon,Hochdorf,Beromünster,Hitzkirch,Triengen,Dagmersellen,Reiden,"
+    "Zofingen,Oftringen,Aarburg,Willisau,Ruswil,Wolhusen,Malters,Menziken,Reinach AG,"
+    "Schöftland,Zell LU,Buttisholz"
+)
 LD_RE = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S)
 SKIP_TITLE = re.compile(
     r"lehrstelle|lernende|apprenti|apprentissage|ausbildungsplatz|\blehre\b|schnupper", re.I
@@ -107,7 +116,11 @@ def main():
     ap.add_argument("--max-age", type=int, default=21, help="Max. Alter in Tagen")
     ap.add_argument("--pages", type=int, default=2)
     ap.add_argument("--keep-apprenticeships", action="store_true")
+    ap.add_argument("--locations", default="",
+                    help='Kommagetrennte Orte; "sursee" = Region Sursee 25 km. Leer = ganze Schweiz')
     a = ap.parse_args()
+    locs = REGION_SURSEE if a.locations.strip().lower() == "sursee" else a.locations
+    locs = [l.strip() for l in locs.split(",") if l.strip()] or [None]
 
     known = set()
     if a.known:
@@ -118,9 +131,14 @@ def main():
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=a.max_age)
     seen, hits = set(), []
-    for term in [t.strip() for t in a.terms.split(",") if t.strip()]:
+    queries = [(t.strip(), loc) for loc in locs for t in a.terms.split(",") if t.strip()]
+    for term, loc in queries:
         for page in range(1, a.pages + 1):
-            h = fetch(SEARCH.format(term=urllib.parse.quote(term), page=page))
+            if loc:
+                url = SEARCH_LOC.format(loc=urllib.parse.quote(loc), term=urllib.parse.quote(term), page=page)
+            else:
+                url = SEARCH.format(term=urllib.parse.quote(term), page=page)
+            h = fetch(url)
             posts = ld_postings(h)
             if not posts:
                 break
@@ -139,8 +157,10 @@ def main():
                         continue
                 except ValueError:
                     pass
-                hits.append((term, jid))
-            time.sleep(0.6)
+                hits.append((term if not loc else f"{term} @ {loc}", jid))
+            time.sleep(0.4)
+            if len(posts) < 20:
+                break
 
     out = []
     for term, jid in hits:

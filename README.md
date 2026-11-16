@@ -2,11 +2,12 @@
 
 Persönliches Job-Dashboard für die Stellensuche in der Schweiz.
 
-- **Dashboard:** https://claude.ai/artifact/EeeUJ7BLxpjZPT2QGQmsKi (privat, auf Laptop und Handy nutzbar)
-- **Quelle der Seite:** `dashboard/stellenradar.html`
+- **Webseite:** https://stellenradar.netlify.app (Netlify, Ordner `dashboard/`, Login über Supabase)
+- **Datenbank:** Supabase (Schema in `supabase/schema.sql`), Live-Abgleich zwischen Geräten
+- **Alte Claude-Version:** `dashboard/stellenradar.html` (https://claude.ai/artifact/EeeUJ7BLxpjZPT2QGQmsKi, wird nicht mehr befüllt)
 - **Suchskript:** `scanner/scan_jobs.py` holt neue Inserate von jobs.ch (JobCloud-Netz, deckt auch jobup.ch und jobscout24.ch ab)
 
-## Datenbank (Artifact-DB)
+## Datenbank (Supabase, Spalten in snake_case)
 
 | Pfad | Inhalt |
 | --- | --- |

@@ -564,8 +564,8 @@ details.more[open] summary::before { content: "−"; }
     }
     const tr = trash();
     const trashHtml = tr.length ? `<details class="trash"><summary>Verworfen (${tr.length})</summary><ul>
-      ${tr.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).slice(0, 50).map(j => `<li><span>${esc(j.title)} · ${esc(j.company || "")}</span><button class="btn ghost" data-act="restore" data-id="${esc(j.id)}">Zurückholen</button></li>`).join("")}
-    </ul></details>` : "";
+      ${tr.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))).slice(0, 50).map(j => `<li><span>${esc(j.title)} · ${esc(j.company || "")}</span><span style="display:flex;gap:4px;flex:none"><button class="btn ghost" data-act="restore" data-id="${esc(j.id)}">Zurückholen</button><button class="btn ghost danger" data-act="purge" data-id="${esc(j.id)}">Löschen</button></span></li>`).join("")}
+    </ul>${state.confirmPurge ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px"><span>Alle ${tr.length} verworfenen Stellen endgültig löschen?</span><button class="btn primary" data-act2="purgeall">Ja, alle löschen</button><button class="btn ghost" data-act2="purgecancel">Abbrechen</button></div>` : `<button class="btn ghost danger" style="margin-top:12px" data-act2="purgeask">Alle endgültig löschen</button>`}</details>` : "";
     return loadingOrError() + head + body + trashHtml;
   }
   function dueInfo(j) {
@@ -781,7 +781,20 @@ details.more[open] summary::before { content: "−"; }
     if (st === "beworben" && !j.appliedAt) patch.appliedAt = new Date().toISOString().slice(0, 10);
     updateJob(id, patch, `Status: ${ST[st].label}`);
   }
+  function purge(id) {
+    state.jobs.delete(id);
+    if (state.db) write(id, () => state.db.doc("jobs/" + id).delete());
+  }
   document.addEventListener("click", e => {
+    const t2 = e.target.closest("[data-act2]");
+    if (t2) {
+      const a = t2.dataset.act2;
+      if (a === "purgeask") state.confirmPurge = true;
+      if (a === "purgecancel") state.confirmPurge = false;
+      if (a === "purgeall") { state.confirmPurge = false; const n = trash().length; trash().forEach(j => purge(j.id)); toast(`${n} Stellen endgültig gelöscht`); }
+      render(); const d = document.querySelector(".trash"); if (d) d.open = true;
+      return;
+    }
     const t = e.target.closest("[data-act],[data-go],[data-open],[data-close],[data-setst],.tab[data-view]");
     if (!t) return;
     if (t.matches(".tab[data-view]")) return go(t.dataset.view);
@@ -794,6 +807,7 @@ details.more[open] summary::before { content: "−"; }
     if (act === "keep") animateOut(id, () => { updateJob(id, { stage: "pipeline", status: j.status || "offen" }, "Behalten"); toast("In «Meine Bewerbungen» verschoben", { label: "Öffnen", run: () => { go("pipeline"); openDrawer(id); } }); });
     if (act === "dismiss") animateOut(id, () => { updateJob(id, { stage: "verworfen" }, "Verworfen"); toast("Stelle verworfen", { label: "Rückgängig", run: () => updateJob(id, { stage: "neu" }, "Zurückgeholt") }); });
     if (act === "restore") updateJob(id, { stage: "neu" }, "Zurückgeholt");
+    if (act === "purge") { purge(id); render(); const d = document.querySelector(".trash"); if (d) d.open = true; toast("Endgültig gelöscht"); }
     if (act === "unkeep") { closeDrawer(); updateJob(id, { stage: "neu" }, "Zurück zu den Treffern"); }
     if (act === "remove") { closeDrawer(); updateJob(id, { stage: "verworfen" }, "Entfernt"); toast("Stelle entfernt", { label: "Rückgängig", run: () => updateJob(id, { stage: "pipeline" }, "Wiederhergestellt") }); }
   });
